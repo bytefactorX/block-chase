@@ -3,10 +3,49 @@
 # Made by me :> 
 # -------------------------------- #
 
-#todo: better enemy logic
-#todo: tidy up the code
+# todo: score does not return back to 0 upon restarting
+# todo: enemy logic is fucked
 import pygame
 import sys
+from random import randint
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        super().__init__
+        self.image = pygame.image.load('block chase\\graphics\\character.png').convert_alpha()
+        self.rect = self.image.get_rect(midbottom = (100, 300))
+        self.gravity = 0
+
+    def player_input(self):
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_SPACE] and self.rect.bottom >= 300:
+            self.gravity = -15
+
+    def apply_grav(self):
+        self.gravity += 1
+        self.rect.y += self.gravity
+        if self.rect.bottom >= 300:
+            self.rect.bottom = 300
+
+    def update(self):
+        self.player_input()
+        self.apply_grav()
+
+class Spike(pygame.sprite.Sprite):
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        super().__init__
+        self.image = pygame.image.load('block chase\\graphics\\spike.png').convert_alpha()
+        self.rect = spike_surface.get_rect(midbottom = (randint(900, 1100), 300))
+
+    def update(self):
+        self.rect.x -= 10
+        self.destroy()
+
+    def destroy(self):
+        if self.rect.x <= -100:
+            self.kill()
 
 def display_score():
     # gives time in ms, which is what is desired
@@ -17,8 +56,34 @@ def display_score():
 
     return counter
 
-# rewriting the main game loop 
-# date: 1/15/24
+def spike_movement(obstacle_list):
+    if obstacle_list:
+        for obstacle_rect in obstacle_list:
+            obstacle_rect.x -= 10
+
+            screen.blit(spike_surface, obstacle_rect)
+
+        # only copies items of list if obstacle is on screen
+        obstacle_list = [obstacle for obstacle in obstacle_list if obstacle.x > -100]
+
+        return obstacle_list
+    else:
+        return []
+
+def collisions(character, obstacles):
+    if obstacles:
+        for obstacle_rect in obstacles:
+            if character.colliderect(obstacle_rect):
+                return False
+    return True
+
+def sprite_collisions():
+    if pygame.sprite.spritecollide(player.sprite, spike, False):
+        spike.empty()
+        return False
+    else:
+        return True
+
 width = 800
 height = 400
 FPS = 60
@@ -28,27 +93,37 @@ screen = pygame.display.set_mode((width, height))
 pygame.display.set_caption("Block Chase")
 clock = pygame.time.Clock()
 game_active = True 
-# sets starting score to 0
 start_time = 0
 score = 0 
 
+player = pygame.sprite.GroupSingle()
+player.add(Player())
+spike = pygame.sprite.Group()
+
 # convert_alpha() gets rid of borders around graphics and improves performance
-text = pygame.font.Font('text\\slkscrb.ttf', 42)
-sky_surface = pygame.image.load('graphics\\sky.png').convert_alpha()
+text = pygame.font.Font('block chase\\text\\slkscrb.ttf', 42)
+sky_surface = pygame.image.load('block chase\\graphics\\sky.png').convert_alpha()
 sky_rect = sky_surface.get_rect(midright = (800, 150))
-ground_surface = pygame.image.load('graphics\\ground.png').convert_alpha()
-character = pygame.image.load('graphics\\character.png').convert_alpha()
+ground_surface = pygame.image.load('block chase\\graphics\\ground.png').convert_alpha()
+character = pygame.image.load('block chase\\graphics\\character.png').convert_alpha()
 character_rect = character.get_rect(midbottom = (100, 300))
-# initializes gravity
-character_gravity = 0
-spike_surface = pygame.image.load('graphics\\spike.png').convert_alpha()
+
+# enemies
+spike_surface = pygame.image.load('block chase\\graphics\\spike.png').convert_alpha()
 spike_rect = spike_surface.get_rect(midbottom = (600, 300))
 
+# game over screen
 game_name = text.render('You died!', False, 'black')
 game_name_rect = game_name.get_rect(center = (400, 80))
 
 game_msg = text.render('Press RETURN to play!', False, 'black')
 game_msg_rect = game_msg.get_rect(center = (400, 300))
+
+#timer
+obstacle_timer = pygame.USEREVENT + 1
+pygame.time.set_timer(obstacle_timer, 1200)
+
+obstacle_list = []
 
 while True:
     for event in pygame.event.get():
@@ -65,40 +140,38 @@ while True:
         else:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
-                    game_active = True  
-                    # replacing spike rect to get out of way,
-                    # makes game restart smoother
-                    spike_rect.left = 800
+                    game_active = True
                     start_time = int(pygame.time.get_ticks() / 100)
 
     if game_active:
         # blit draws these graphics to the screen
         screen.blit(sky_surface, sky_rect)
         screen.blit(ground_surface, (0, 300))
-        # screen.blit(text_surface, (300, 50))
 
-        # creates gravity when jumping
-        character_gravity += 1
-        character_rect.y += character_gravity
-        # simulates the floor
-        if character_rect.bottom >= 300:
-            character_rect.bottom = 300
-        screen.blit(character, character_rect)
-
-        spike_rect.x -= 5
-        if spike_rect.right <= 0:
-            spike_rect.left = 800
-        screen.blit(spike_surface, (spike_rect))
+        player.draw(screen)
+        player.update()
+        spike.draw(screen)
+        spike.update()
 
         score = display_score()
 
-        # collisions
-        if spike_rect.colliderect(character_rect):
-            game_active = False
+        if event.type == obstacle_timer and game_active:
+            # randomly spawns spike on x-axis based off of timer
+            max_spikes = 4
+            if len(spike) < max_spikes:
+                spike.add(Spike())
+
+            game_active = sprite_collisions()
+
     else:
         screen.fill('dark red')
         screen.blit(game_name, game_name_rect)
         screen.blit(game_msg, game_msg_rect)
+
+        # clearing list upon collision
+        obstacle_list.clear()
+
+        character_gravity = 0
 
         score_msg = text.render(f'Your score: {score}', False, 'black')
         score_msg_rect = score_msg.get_rect(center = (400, 140))
